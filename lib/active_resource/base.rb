@@ -601,8 +601,8 @@ module ActiveResource
       end
 
       def headers
-        Thread.current["active.resource.headers.#{self.object_id}"] ||= {}         
-        
+        Thread.current["active.resource.headers.#{self.object_id}"] ||= {}
+
         if superclass != Object && superclass.headers
           Thread.current["active.resource.headers.#{self.object_id}"] = superclass.headers.merge(Thread.current["active.resource.headers.#{self.object_id}"])
         else
@@ -770,11 +770,13 @@ module ActiveResource
       #
       # ==== Options
       # * +attributes+ - A hash that overrides the default values from the server.
+      # * +header_params+ - A hash of custom headers to add to the request
       #
       # Returns the new resource instance.
       #
-      def build(attributes = {})
-        attrs = self.format.decode(connection.get("#{new_element_path(attributes)}", headers).body)
+      def build(attributes = {}, header_params = headers)
+        custom_headers = headers.merge(header_params || {})
+        attrs = self.format.decode(connection.get("#{new_element_path(attributes)}", custom_headers).body)
         self.new(attrs)
       end
 
@@ -920,7 +922,8 @@ module ActiveResource
       #   # Let's assume a request to events/5/cancel.json
       #   Event.delete(params[:id]) # sends DELETE /events/5
       def delete(id, options = {})
-        connection.delete(element_path(id, options), headers)
+        custom_headers = headers.merge(options[:headers] || {})
+        connection.delete(element_path(id, options), custom_headers)
       end
 
       # Asserts the existence of a resource, returning <tt>true</tt> if the resource is found.
@@ -931,10 +934,11 @@ module ActiveResource
       #
       #   Note.exists(1349) # => false
       def exists?(id, options = {})
+        custom_headers = headers.merge(options[:headers] || {})
         if id
           prefix_options, query_options = split_options(options[:params])
           path = element_path(id, prefix_options, query_options)
-          response = connection.head(path, headers)
+          response = connection.head(path, custom_headers)
           response.code.to_i == 200
         end
         # id && !find_single(id, options).nil?
@@ -954,16 +958,17 @@ module ActiveResource
         # Find every resource
         def find_every(options)
           begin
+            custom_headers = headers.merge(options[:headers] || {})
             case from = options[:from]
             when Symbol
               instantiate_collection(get(from, options[:params]), options[:params])
             when String
               path = "#{from}#{query_string(options[:params])}"
-              instantiate_collection(format.decode(connection.get(path, headers).body) || [], options[:params])
+              instantiate_collection(format.decode(connection.get(path, custom_headers).body) || [], options[:params], custom_headers)
             else
               prefix_options, query_options = split_options(options[:params])
               path = collection_path(prefix_options, query_options)
-              instantiate_collection( (format.decode(connection.get(path, headers).body) || []), query_options, prefix_options )
+              instantiate_collection( (format.decode(connection.get(path, custom_headers).body) || []), query_options, prefix_options, custom_headers )
             end
           rescue ActiveResource::ResourceNotFound
             # Swallowing ResourceNotFound exceptions and return nil - as per
@@ -979,7 +984,8 @@ module ActiveResource
             instantiate_record(get(from, options[:params]))
           when String
             path = "#{from}#{query_string(options[:params])}"
-            instantiate_record(format.decode(connection.get(path, headers).body))
+            custom_headers = headers.merge(options[:headers] || {})
+            instantiate_record(format.decode(connection.get(path, custom_headers).body))
           end
         end
 
@@ -987,19 +993,21 @@ module ActiveResource
         def find_single(scope, options)
           prefix_options, query_options = split_options(options[:params])
           path = element_path(scope, prefix_options, query_options)
-          instantiate_record(format.decode(connection.get(path, headers).body), prefix_options)
+          custom_headers = headers.merge(options[:headers] || {})
+          instantiate_record(format.decode(connection.get(path, custom_headers).body), prefix_options, custom_headers)
         end
 
-        def instantiate_collection(collection, original_params = {}, prefix_options = {})
+        def instantiate_collection(collection, original_params = {}, prefix_options = {}, header_params = headers)
           collection_parser.new(collection).tap do |parser|
             parser.resource_class  = self
             parser.original_params = original_params
-          end.collect! { |record| instantiate_record(record, prefix_options) }
+          end.collect! { |record| instantiate_record(record, prefix_options, header_params) }
         end
 
-        def instantiate_record(record, prefix_options = {})
+        def instantiate_record(record, prefix_options = {}, header_params = headers)
           new(record, true).tap do |resource|
             resource.prefix_options = prefix_options
+            resource.headers = header_params
           end
         end
 
@@ -1040,6 +1048,7 @@ module ActiveResource
 
     attr_accessor :attributes #:nodoc:
     attr_accessor :prefix_options #:nodoc:
+    attr_accessor :headers #:nodoc:
 
     # If no schema has been defined for the class (see
     # <tt>ActiveResource::schema=</tt>), the default automatic schema is
@@ -1070,6 +1079,7 @@ module ActiveResource
     def initialize(attributes = {}, persisted = false)
       @attributes     = {}.with_indifferent_access
       @prefix_options = {}
+      @headers        = self.class.headers
       @persisted = persisted
       load(attributes, false, persisted)
     end
@@ -1423,7 +1433,7 @@ module ActiveResource
       # Update the resource on the remote service.
       def update
         run_callbacks :update do
-          connection.put(element_path(prefix_options), encode, self.class.headers).tap do |response|
+          connection.put(element_path(prefix_options), encode, headers).tap do |response|
             load_attributes_from_response(response)
           end
         end
