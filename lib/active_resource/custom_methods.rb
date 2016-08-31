@@ -53,28 +53,33 @@ module ActiveResource
         # <tt>:from</tt> option. For example:
         #
         #   Person.find(:all, :from => :active)
-        def get(custom_method_name, options = {})
-          hashified = format.decode(connection.get(custom_method_collection_url(custom_method_name, options), headers).body)
+        def get(custom_method_name, options = {}, header_params = headers)
+          custom_headers = headers.merge(header_params || {})
+          hashified = format.decode(connection.get(custom_method_collection_url(custom_method_name, options), custom_headers).body)
           derooted  = Formats.remove_root(hashified)
           derooted.is_a?(Array) ? derooted.map { |e| Formats.remove_root(e) } : derooted
         end
 
-        def post(custom_method_name, options = {}, body = '')
-          connection.post(custom_method_collection_url(custom_method_name, options), body, headers)
+        def post(custom_method_name, options = {}, body = '', header_params = headers)
+          custom_headers = headers.merge(header_params || {})
+          connection.post(custom_method_collection_url(custom_method_name, options), body, custom_headers)
         end
 
-        def patch(custom_method_name, options = {}, body = '')
-          connection.patch(custom_method_collection_url(custom_method_name, options), body, headers)
+        def patch(custom_method_name, options = {}, body = '', header_params = headers)
+          custom_headers = headers.merge(header_params || {})
+          connection.patch(custom_method_collection_url(custom_method_name, options), body, custom_headers)
         end
 
-        def put(custom_method_name, options = {}, body = '')
-          connection.put(custom_method_collection_url(custom_method_name, options), body, headers)
+        def put(custom_method_name, options = {}, body = '', header_params = headers)
+          custom_headers = headers.merge(header_params || {})
+          connection.put(custom_method_collection_url(custom_method_name, options), body, custom_headers)
         end
 
-        def delete(custom_method_name, options = {})
+        def delete(custom_method_name, options = {}, header_params = headers)
+          custom_headers = headers.merge(header_params || {})
           # Need to jump through some hoops to retain the original class 'delete' method
           if custom_method_name.is_a?(Symbol)
-            connection.delete(custom_method_collection_url(custom_method_name, options), headers)
+            connection.delete(custom_method_collection_url(custom_method_name, options), custom_headers)
           else
             orig_delete(custom_method_name, options)
           end
